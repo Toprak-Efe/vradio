@@ -1,0 +1,9 @@
+[package]
+name = "vradio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.19", features = ["derive"] }
+rodio = "0.19.0"
+sdl2 = "0.37.0"
