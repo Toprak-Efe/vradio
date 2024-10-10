@@ -34,7 +34,7 @@ fn main() {
   curs_set(0);
   noecho();
 
-  let file = std::fs::File::open("music-u.mp3").unwrap();
+  let file = std::fs::File::open(args.path).unwrap();
   let source = rodio::Decoder::new(file).unwrap().buffered();
   let duration = source.total_duration().unwrap();
   let source_data: Vec<f32> = source.clone().convert_samples().collect();
