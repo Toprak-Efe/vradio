@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.19", features = ["derive"] }
+clap = { version = "4.5.20", features = ["derive"] }
+pancurses = "0.17.0"
 rodio = "0.19.0"
-sdl2 = "0.37.0"
+rustfft = "6.2.0"
+
+[profile.release]
+debug = true
