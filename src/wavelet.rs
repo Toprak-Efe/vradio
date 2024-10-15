@@ -96,15 +96,18 @@ pub fn morlet_transform(
   let fft_forward = planner.plan_fft_forward(out_len);
   let fft_inverse = planner.plan_fft_inverse(out_len);
 
+  let mut start_t = std::time::Instant::now();
   let mut signal_complex: Vec<Complex<f32>> =
     signal.iter().map(|&v| Complex::new(v, 0.0)).collect();
   for _ in 0..out_len - signal_complex.len() {
     signal_complex.push(Complex::new(0.0, 0.0));
   }
   fft_forward.process(&mut signal_complex);
+  log::log!(log::Level::Info, "Signal FFT processed: {}", start_t.elapsed().as_secs_f32());
 
   let dt: f32 = duration / (width as f32);
   for i in 0..height {
+    start_t = std::time::Instant::now();
     let wavelet: Vec<f32> = morlet(width, dt, df * ((1 + i) as f32));
     let mut wavelet_complex: Vec<Complex<f32>> =
       wavelet.iter().map(|&v| Complex::new(v, 0.0)).collect();
@@ -112,19 +115,24 @@ pub fn morlet_transform(
       wavelet_complex.push(Complex::new(0.0, 0.0));
     }
     fft_forward.process(&mut wavelet_complex);
+    log::log!(log::Level::Info, "{} Wavelet FFT processed: {}", i, start_t.elapsed().as_secs_f32());
+    start_t = std::time::Instant::now();
     let mut conv_complex: Vec<Complex<f32>> = signal_complex
       .iter()
       .zip(wavelet_complex.iter())
       .map(|(&v1, &v2)| v1 * v2)
       .collect();
     fft_inverse.process(&mut conv_complex);
-    let conv: Vec<f32> = conv_complex
+    log::log!(log::Level::Info, "{} Convolution processed: {}", i, start_t.elapsed().as_secs_f32());
+    
+    start_t = std::time::Instant::now();let conv: Vec<f32> = conv_complex
       .iter()
       .map(|&v| v.re() / out_len as f32)
       .collect();
     let useful = conv[width / 2..conv.len() - width / 2].to_vec();
     let slice = resample(&useful, width);
     data[i].copy_from_slice(slice.as_slice());
+    log::log!(log::Level::Info, "{} Convolution IFFT processed: {}", i, start_t.elapsed().as_secs_f32());
   }
 
   return data_raw;

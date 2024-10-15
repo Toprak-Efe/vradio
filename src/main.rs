@@ -1,3 +1,4 @@
+mod hls;
 mod render;
 mod wavelet;
 
@@ -24,8 +25,12 @@ struct Args {
 }
 
 fn main() {
-  /* Setup Curses & Rodio */
   let args = Args::parse();
+  if cfg!(debug_assertions) {
+    simple_logging::log_to_file("log", log::LevelFilter::Debug).unwrap();
+  } else {
+    simple_logging::log_to_file("log", log::LevelFilter::Info).unwrap();
+  }
   let window = initscr();
   window.clear();
   window.refresh();
@@ -77,7 +82,6 @@ fn main() {
     window.clear();
     render::render_data(&window, &data, 1.0, -1.0);
     window.draw_box(0, 0);
-    window.mvprintw(0, 0, format!("Index: {idx}"));
     window.refresh();
 
     /* Timing */

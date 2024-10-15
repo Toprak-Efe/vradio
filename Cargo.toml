@@ -5,9 +5,12 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
+reqwest = { version = "0.12.8", features = ["blocking"]}
+log = "0.4.22"
 pancurses = "0.17.0"
 rodio = "0.19.0"
 rustfft = "6.2.0"
+simple-logging = "2.0.2"
 
 [profile.release]
-debug = true
+debug = 1
