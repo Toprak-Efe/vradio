@@ -1,36 +1,70 @@
-mod hls;
+mod client;
+mod manifest;
 mod render;
 mod wavelet;
 
-use clap::Parser;
+use client::HlsClient;
 use pancurses::{curs_set, echo, endwin, initscr, noecho, resize_term, Input};
-use rodio::Source;
+use render::render;
+use rodio::source::Buffered;
+use rodio::{Decoder, OutputStream, Sink, Source};
 use std::ops::Div;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::{collections::VecDeque, io::Cursor};
 
-/// CLI tool to play sound streams.
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-  /// Path to a track container, mp3, etc.
-  #[arg(short, long)]
-  path: std::path::PathBuf,
-
-  /// Amount of frequencies to display.
-  #[arg(short, long, default_value_t = 8)]
-  width: usize,
-
-  /// Definition of the animation played.
-  #[arg(short, long, default_value_t = 16)]
-  height: usize,
-}
+static WIDTH: usize = 256;
+static HEIGHT: usize = 64;
+static URL: &str = "https://rd-trtradyo3.medya.trt.com.tr/master_128.m3u8";
 
 fn main() {
-  let args = Args::parse();
   if cfg!(debug_assertions) {
     simple_logging::log_to_file("log", log::LevelFilter::Debug).unwrap();
   } else {
     simple_logging::log_to_file("log", log::LevelFilter::Info).unwrap();
   }
+
+  type P = (Vec<f32>, Buffered<Decoder<Cursor<Box<[u8]>>>>, String);
+  let (p_sender, p_receive): (Sender<P>, Receiver<P>) = mpsc::channel();
+
+  /* Thread 1 & 2, Spectral Processing & Hls Subscription */
+  let t12_run = Arc::new(Mutex::new(true));
+  let t12_run_c = Arc::clone(&t12_run);
+
+  let t12_handle = thread::spawn(move || {
+    let mut buff = VecDeque::new();
+    let mut client = HlsClient::new(URL).expect("Failed to create client");
+    while let Some(source) = client.next() {
+      /* Exit check. */
+      if !(*t12_run_c.lock().unwrap()) {
+        client.stop();
+        break;
+      }
+
+      /* Fill the buffer */
+      if buff.len() < 1 {
+        let d = 6.0f32; // source.total_duration().unwrap();
+        let data: Vec<f32> = source.0.clone().convert_samples().collect();
+        let spectrograph = wavelet::morlet_transform(
+          &data,
+          20_000.0 / (WIDTH as f32),
+          d, //.as_secs_f32(),
+          WIDTH,
+          HEIGHT,
+        );
+        buff.push_back((spectrograph, source));
+      }
+
+      /* Send from buffer. */
+      if let Some((spectrograph, source)) = buff.pop_back() {
+        p_sender.send((spectrograph, source.0, source.1)).unwrap();
+      }
+    }
+    client.stop();
+  });
+
   let window = initscr();
   window.clear();
   window.refresh();
@@ -39,60 +73,62 @@ fn main() {
   curs_set(0);
   noecho();
 
-  let file = std::fs::File::open(args.path).unwrap();
-  let source = rodio::Decoder::new(file).unwrap().buffered();
-  let duration = source.total_duration().unwrap();
-  let source_data: Vec<f32> = source.clone().convert_samples().collect();
-  let d_width: usize = args.width;
-  let d_height: usize = args.height;
-  let spectrograph_raw = wavelet::morlet_transform(
-    &source_data,
-    20_000.0 / (d_width as f32),
-    duration.as_secs_f32(),
-    d_width,
-    d_height,
-  );
-  let spectrograph_base: Vec<_> = spectrograph_raw.as_slice().chunks(d_width).collect();
-  let spectrograph = spectrograph_base.as_slice();
+  let (_stream, handle) = OutputStream::try_default().unwrap();
+  let sink = Sink::try_new(&handle).unwrap();
 
-  let (_stream, handle) = rodio::OutputStream::try_default().unwrap();
-  let sink = rodio::Sink::try_new(&handle).unwrap();
-  sink.append(source);
-  sink.set_volume(0.2);
+  let tick_period = std::time::Duration::from_millis(10);
+  let mut data_iter = p_receive.iter();
+  'main: loop {
+    if let Some(data) = data_iter.next() {
+      log::log!(log::Level::Info, "Playing Track: {}", data.2);
 
-  let tick_period = std::time::Duration::new(0, 50_000_000);
-  let mut last_time = std::time::Instant::now();
-  'main_loop: loop {
-    /* Data Input */
-    let t: f32 = sink.get_pos().as_secs_f32().clamp(0.001, f32::MAX) / duration.as_secs_f32();
-    let idx: usize = ((t * d_height as f32) as usize) % d_height;
-    let data: Vec<f32> = spectrograph[idx].to_vec();
+      /* Set the data up. */
+      sink.append(data.1);
+      let buffer_raw: Vec<_> = data.0.as_slice().chunks(WIDTH).collect();
+      let spectrograph = buffer_raw.as_slice();
 
-    /* Events */
-    match window.getch() {
-      Some(Input::KeyResize) => {
-        resize_term(0, 0);
-      }
-      Some(Input::Character(c)) if c == 'q' => break,
-      Some(Input::KeyDC) => break,
-      _ => (),
+      /* Segment loop until audio finishes. */
+      let mut last_time = std::time::Instant::now();
+      'frame: loop {
+        /* Data */
+        let t: f32 = sink.get_pos().as_secs_f32().clamp(0.001, f32::MAX);
+        let idx: usize = ((t * HEIGHT as f32) as usize) % HEIGHT;
+        let data: Vec<f32> = spectrograph[idx].to_vec();
+
+        /* Events */
+        match window.getch() {
+          Some(Input::KeyResize) => {
+            resize_term(0, 0);
+          }
+          Some(Input::Character(c)) if c == 'q' => break 'main,
+          Some(Input::KeyDC) => break 'main,
+          _ => (),
+        }
+
+        /* Render */
+        window.clear();
+        render(&window, &data, 1.0, -1.0);
+        window.draw_box(0, 0);
+        window.refresh();
+
+        /* Tick */
+        while std::time::Instant::now() - last_time < tick_period {
+          std::thread::sleep(tick_period.div(2));
+          if sink.empty() {
+            break 'frame;
+          }
+        }
+        last_time = std::time::Instant::now();
+      } // 'frame loop
+      continue;
     }
+    break 'main;
+  } // 'main loop
 
-    /* Render */
-    window.clear();
-    render::render_data(&window, &data, 1.0, -1.0);
-    window.draw_box(0, 0);
-    window.refresh();
-
-    /* Timing */
-    while std::time::Instant::now() - last_time < tick_period {
-      std::thread::sleep(tick_period.div(2));
-      if sink.empty() {
-        break 'main_loop;
-      }
-    }
-    last_time = std::time::Instant::now();
+  if let Ok(mut run_guard) = t12_run.lock() {
+    *run_guard = false;
   }
+  t12_handle.join().unwrap();
 
   echo();
   curs_set(1);

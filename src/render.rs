@@ -1,4 +1,4 @@
-pub fn render_data(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: f32) {
+pub fn render(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: f32) {
   /* Input check */
   assert_ne!(
     data.len(),
@@ -47,7 +47,7 @@ pub fn render_data(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: 
   /* Plot Drawing */
   for i in 1..cols - 1 {
     for j in 0..offsets[(i - 1) as usize] {
-      win.mvprintw(rows - 2 - j, i, "#");
+      win.mvprintw(rows - 2 - j, i, ".");
     }
   }
 }

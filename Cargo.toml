@@ -4,13 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hls = { path = "../hls" }
 clap = { version = "4.5.20", features = ["derive"] }
 reqwest = { version = "0.12.8", features = ["blocking"]}
 log = "0.4.22"
 pancurses = "0.17.0"
-rodio = "0.19.0"
+rodio = { version = "0.19.0", features = ["symphonia-all"] }
 rustfft = "6.2.0"
 simple-logging = "2.0.2"
+url = "2.5.2"
 
 [profile.release]
-debug = 1
+debug = 0
