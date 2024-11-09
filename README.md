@@ -2,6 +2,9 @@
 
 vRadio is a Rust-based TUI application designed to provide a seamless internet radio streaming experience to the channel TRT3. This project might offer to be a good base for any other HLS radio player.
 
+[Exhibit](https://github.com/user-attachments/assets/81813f24-dee4-4936-a9b9-36a6a60168bc)
+
+
 ## Features
 
 - HLS audio streaming from TRT3.
