@@ -1,4 +1,30 @@
-pub fn render(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: f32) {
+pub struct Packet {
+  pub volume: f32,
+  pub mute: bool,
+}
+
+impl Packet {
+  pub fn new(volume: f32, mute: bool) -> Self {
+    Packet { volume, mute }
+  }
+
+  pub fn volume_up(&mut self) {
+    self.volume += 0.05f32;
+    if self.volume > 1.0f32 {
+      self.volume = 1.0f32;
+    }
+  }
+  
+  pub fn volume_down(&mut self) {
+    self.volume -= 0.05f32;
+    if self.volume < 0.0f32 {
+      self.volume = 0.0f32;
+    }
+  }
+
+}
+
+pub fn render(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: f32, state: &Packet) {
   /* Input check */
   assert_ne!(
     data.len(),
@@ -50,4 +76,14 @@ pub fn render(win: &pancurses::Window, data: &Vec<f32>, v_max: f32, v_min: f32) 
       win.mvprintw(rows - 2 - j, i, ".");
     }
   }
+
+  /* Audio Drawing */
+  win.mvprintw(1, 1, "TRT3");
+  let s = format!("[{:.0}%%]", state.volume*100.0f32);
+  win.mvprintw(1, 6, s.clone());
+  let c;
+  if state.mute { c = 'P'; } // P for Pause
+  else { c = '>'; } // > for Play
+  win.mvprintw(1, 6 + (s.len() as i32), c.to_string());
+  //win.mvprintw(1, 4, '\u{1F378}'.to_string());
 }

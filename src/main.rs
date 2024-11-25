@@ -5,7 +5,7 @@ mod wavelet;
 
 use client::HlsClient;
 use pancurses::{curs_set, echo, endwin, initscr, noecho, resize_term, Input};
-use render::render;
+use render::{render, Packet};
 use rodio::source::Buffered;
 use rodio::{Decoder, OutputStream, Sink, Source};
 use std::ops::Div;
@@ -32,7 +32,7 @@ fn main() {
   /* Thread 1 & 2, Spectral Processing & Hls Subscription */
   let t12_run = Arc::new(Mutex::new(true));
   let t12_run_c = Arc::clone(&t12_run);
-
+  
   let t12_handle = thread::spawn(move || {
     let mut buff = VecDeque::new();
     let mut client = HlsClient::new(URL).expect("Failed to create client");
@@ -64,6 +64,8 @@ fn main() {
     }
     client.stop();
   });
+  
+  let mut player_state: Packet = Packet::new(1.0, false);
 
   let window = initscr();
   window.clear();
@@ -75,6 +77,7 @@ fn main() {
 
   let (_stream, handle) = OutputStream::try_default().unwrap();
   let sink = Sink::try_new(&handle).unwrap();
+  sink.set_volume(1.0);
 
   let tick_period = std::time::Duration::from_millis(10);
   let mut data_iter = p_receive.iter();
@@ -100,14 +103,34 @@ fn main() {
           Some(Input::KeyResize) => {
             resize_term(0, 0);
           }
-          Some(Input::Character(c)) if c == 'q' => break 'main,
+          Some(Input::Character(c)) => {
+            match c {
+              'q' => break 'main,
+              '[' => {
+                player_state.volume_down();
+                sink.set_volume(player_state.volume);
+              },
+              ']' => {
+                player_state.volume_up();
+                sink.set_volume(player_state.volume);
+              },
+              '\n' => {
+                player_state.mute = !player_state.mute;
+                match player_state.mute {
+                    true => sink.set_volume(0.0f32),
+                    false => sink.set_volume(player_state.volume),
+                }
+              }
+              _ => (),
+            }
+          }
           Some(Input::KeyDC) => break 'main,
           _ => (),
         }
 
         /* Render */
         window.clear();
-        render(&window, &data, 1.0, -1.0);
+        render(&window, &data, 1.0, -1.0, &player_state);
         window.draw_box(0, 0);
         window.refresh();
 
