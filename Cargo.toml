@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hls = { path = "../hls" }
 clap = { version = "4.5.20", features = ["derive"] }
 reqwest = { version = "0.12.8", features = ["blocking"]}
 log = "0.4.22"
